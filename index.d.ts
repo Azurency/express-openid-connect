@@ -134,6 +134,11 @@ interface RequestContext {
    *
    */
   fetchUserInfo(): Promise<UserinfoResponse>;
+
+  /**
+   * Refresh the session from store.
+   */
+  refreshSession?: string;
 }
 
 /**

@@ -313,6 +313,68 @@ describe('appSession custom store', () => {
     );
   });
 
+  it('should be able to refresh the session', async () => {
+    const newSessionData = () => {
+      const epoch = () => (Date.now() / 1000) | 0;
+      const epochNow = epoch();
+      const weekInSeconds = 7 * 24 * 60 * 60;
+
+      return JSON.stringify({
+        header: {
+          uat: epochNow,
+          iat: epochNow,
+          exp: epochNow + weekInSeconds,
+        },
+        data: { sub: '__test_bar__' },
+      });
+    };
+    const app = express();
+
+    const { client, store } = getRedisStore();
+    redisClient = client;
+    await redisClient.set('foo', sessionData());
+
+    const conf = getConfig({
+      ...defaultConfig,
+      session: { ...defaultConfig.session, store },
+    });
+    app.use(appSession(conf));
+
+    const [key] = getKeyStore(conf.secret);
+    const cookieValue = signCookie('appSession', 'foo', key);
+
+    app.get('/', async (req, res, next) => {
+      await redisClient.del('foo');
+      await redisClient.asyncSet('foo', newSessionData());
+      await req.appSession.refreshSession();
+      res.json(req.appSession);
+      next();
+    });
+
+    app.use((req, res, next) => {
+      if (!res.headersSent) {
+        res.writeHead(200);
+      }
+      next();
+    });
+
+    server = await new Promise((resolve) => {
+      const server = app.listen(3000, () => resolve(server));
+    });
+
+    await assert.becomes(
+      request.get('/', {
+        baseUrl,
+        json: true,
+        headers: {
+          cookie: `appSession=${cookieValue}`,
+        },
+        resolveWithFullResponse: false,
+      }),
+      { sub: '__test_bar__' }
+    );
+  });
+
   it('should not sign the session cookie if signSessionStoreCookie is false', async () => {
     await setup({ session: { signSessionStoreCookie: false } });
     await redisClient.asyncSet('foo', sessionData());
